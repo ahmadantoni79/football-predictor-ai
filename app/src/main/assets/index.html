@@ -1,0 +1,253 @@
+
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Football Predictor AI</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#0b1220;color:#eef3ff;font-family:Arial,sans-serif}
+header{padding:22px 16px;background:linear-gradient(135deg,#102d50,#087f65)}
+header h1{font-size:23px;margin:0 0 6px}
+header p{margin:0;color:#c8e8df;font-size:13px}
+main{padding:15px;max-width:650px;margin:auto}
+.card{background:#151f30;border:1px solid #26364c;border-radius:14px;padding:16px;margin-bottom:15px}
+h2{font-size:17px;margin:0 0 14px;color:#65e6b5}
+label{display:block;font-size:13px;color:#bdc9dc;margin:12px 0 6px}
+input{width:100%;padding:13px;border:1px solid #354760;border-radius:9px;background:#0c1727;color:white;font-size:15px}
+button{border:0;border-radius:9px;padding:13px 16px;background:#13a879;color:white;font-weight:bold;font-size:14px;width:100%;margin-top:12px}
+button:disabled{opacity:.5}
+.secondary{background:#263c56}
+.result{background:#0c1928;border-radius:10px;padding:13px;margin-top:12px;line-height:1.7;font-size:14px}
+.green{color:#65e6b5}
+.muted{color:#9aabc2;font-size:12px}
+.tag{display:inline-block;background:#173d38;color:#76edc2;padding:5px 9px;border-radius:20px;font-size:11px;margin:3px}
+hr{border:0;border-top:1px solid #29384d;margin:14px 0}
+footer{text-align:center;color:#73839b;font-size:11px;padding:20px}
+</style>
+</head>
+<body>
+<header>
+<h1>⚽ FOOTBALL PREDICTOR AI</h1>
+<p>Analisis pertandingan dan prediksi sepak bola</p>
+</header>
+
+<main>
+<section class="card">
+<h2>🔑 Pengaturan API</h2>
+<label>API-Football Key</label>
+<input id="apiKey" type="password" placeholder="Masukkan API Key Anda">
+<button onclick="saveKey()">Simpan API Key</button>
+<div class="muted" id="keyStatus">API Key disimpan secara lokal di perangkat.</div>
+</section>
+
+<section class="card">
+<h2>📊 Analisis Pertandingan</h2>
+<label>Tim kandang</label>
+<input id="home" placeholder="Contoh: Arsenal">
+<label>Tim tandang</label>
+<input id="away" placeholder="Contoh: Chelsea">
+<button id="analyzeBtn" onclick="analyze()">ANALISIS PERTANDINGAN</button>
+<div id="analysisResult" class="result">Masukkan kedua tim untuk memulai analisis.</div>
+</section>
+
+<section class="card">
+<h2>🏆 Top 5 Pilihan Hari Ini</h2>
+<p class="muted">Mengambil pertandingan hari ini dan persentase prediksi dari API-Football jika tersedia.</p>
+<button id="topBtn" class="secondary" onclick="loadTop()">CARI TOP 5 PERTANDINGAN</button>
+<div id="topResult" class="result">Tekan tombol untuk mencari pertandingan.</div>
+</section>
+
+<section class="card">
+<h2>ℹ️ Panduan</h2>
+<p class="muted">1. Masukkan API Key API-Football.</p>
+<p class="muted">2. Masukkan nama tim kandang dan tandang.</p>
+<p class="muted">3. Tekan Analisis Pertandingan.</p>
+<p class="muted">4. Top 5 akan mengambil data pertandingan hari ini.</p>
+<p class="muted">Prediksi merupakan estimasi, bukan jaminan hasil pertandingan. Selalu periksa susunan pemain, cedera, dan kondisi terbaru.</p>
+</section>
+</main>
+<footer>FOOTBALL PREDICTOR AI V1 • Data by API-Football</footer>
+
+<script>
+let waiting={};
+let callbackCount=0;
+
+function api(endpoint,params={}){
+ return new Promise((resolve,reject)=>{
+  if(!window.AndroidBridge){
+   reject(new Error("Aplikasi AndroidBridge tidak ditemukan."));
+   return;
+  }
+  const id="cb_"+(++callbackCount);
+  waiting[id]={resolve,reject};
+  try{
+   AndroidBridge.request(endpoint,JSON.stringify(params),id);
+  }catch(e){
+   delete waiting[id];
+   reject(e);
+  }
+  setTimeout(()=>{
+   if(waiting[id]){
+    delete waiting[id];
+    reject(new Error("Permintaan API terlalu lama."));
+   }
+  },25000);
+ });
+}
+
+window.__apiCallback=function(id,result){
+ const item=waiting[id];
+ if(!item)return;
+ delete waiting[id];
+ try{
+  const data=JSON.parse(result);
+  if(data.app_error)throw new Error(data.app_error);
+  if(data.errors && Object.keys(data.errors).length)
+   throw new Error(JSON.stringify(data.errors));
+  item.resolve(data);
+ }catch(e){item.reject(e);}
+};
+
+function saveKey(){
+ const key=document.getElementById("apiKey").value.trim();
+ if(!key){alert("Masukkan API Key terlebih dahulu.");return;}
+ AndroidBridge.saveApiKey(key);
+ document.getElementById("keyStatus").innerHTML=
+ '<span class="green">✓ API Key berhasil disimpan di perangkat.</span>';
+ document.getElementById("apiKey").value="";
+}
+
+function today(){
+ const d=new Date();
+ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+
+function pct(x){
+ if(!x)return "-";
+ return x+"%";
+}
+
+function predictionText(p){
+ if(!p)return "Data prediksi belum tersedia.";
+ const win=p.predictions?.winner;
+ const percent=p.predictions?.percent||{};
+ const goals=p.predictions?.goals||{};
+ const advice=p.predictions?.advice||"";
+ return `
+ <b>Prediksi pemenang:</b> ${win?.name||"Belum tersedia"}<br>
+ <b>Kemungkinan kandang:</b> ${percent.home||"-"}<br>
+ <b>Kemungkinan seri:</b> ${percent.draw||"-"}<br>
+ <b>Kemungkinan tandang:</b> ${percent.away||"-"}<br>
+ <b>Over 2.5:</b> ${goals.over||"-"}<br>
+ <b>Under 2.5:</b> ${goals.under||"-"}<br>
+ <b>Analisis API:</b> ${advice||"-"}
+ `;
+}
+
+async function findTeam(name){
+ const data=await api("teams",{search:name});
+ const teams=data.response||[];
+ if(!teams.length)throw new Error("Tim tidak ditemukan: "+name);
+ const exact=teams.find(x=>x.team.name.toLowerCase()===name.toLowerCase());
+ return exact||teams[0];
+}
+
+async function analyze(){
+ const home=document.getElementById("home").value.trim();
+ const away=document.getElementById("away").value.trim();
+ const out=document.getElementById("analysisResult");
+ const btn=document.getElementById("analyzeBtn");
+ if(!home||!away){alert("Masukkan nama kedua tim.");return;}
+ btn.disabled=true;
+ out.innerHTML="Sedang mengambil data tim dan pertandingan...";
+ try{
+  const [h,a]=await Promise.all([findTeam(home),findTeam(away)]);
+  const [hf,af]=await Promise.all([
+   api("fixtures",{team:h.team.id,next:10}),
+   api("fixtures",{team:a.team.id,next:10})
+  ]);
+  const homeFixtures=hf.response||[];
+  const awayFixtures=af.response||[];
+  const all=[...homeFixtures,...awayFixtures];
+  const match=all.find(x=>
+   x.teams.home.id===h.team.id&&x.teams.away.id===a.team.id
+  )||all.find(x=>x.teams.home.id===a.team.id&&x.teams.away.id===h.team.id);
+
+  if(!match){
+   out.innerHTML="Tim berhasil ditemukan, tetapi jadwal pertemuan berikutnya belum ditemukan. Periksa ejaan nama tim atau jadwal liga.";
+   return;
+  }
+
+  const pr=await api("predictions",{fixture:match.fixture.id});
+  const p=pr.response?.[0];
+  const date=new Date(match.fixture.date).toLocaleString("id-ID");
+  out.innerHTML=`
+   <div class="tag">DATA PERTANDINGAN</div>
+   <h3>${match.teams.home.name} vs ${match.teams.away.name}</h3>
+   <b>Kompetisi:</b> ${match.league.name}<br>
+   <b>Waktu:</b> ${date}<br>
+   <b>Status:</b> ${match.fixture.status.long}
+   <hr>
+   <div class="tag">PREDIKSI API-FOOTBALL</div>
+   ${predictionText(p)}
+   <hr>
+   <b>Catatan:</b> Persentase di atas berasal dari penyedia API, bukan hasil perhitungan akurasi aplikasi.
+  `;
+ }catch(e){
+  out.innerHTML='<span style="color:#ff9999">Gagal: '+e.message+'</span>';
+ }finally{btn.disabled=false;}
+}
+
+async function loadTop(){
+ const out=document.getElementById("topResult");
+ const btn=document.getElementById("topBtn");
+ btn.disabled=true;
+ out.innerHTML="Mengambil jadwal pertandingan hari ini...";
+ try{
+  const data=await api("fixtures",{date:today()});
+  const fixtures=data.response||[];
+  if(!fixtures.length){
+   out.innerHTML="Tidak ada pertandingan yang ditemukan untuk hari ini.";
+   return;
+  }
+  out.innerHTML="Memeriksa prediksi "+Math.min(fixtures.length,12)+" pertandingan...";
+  const selected=fixtures.slice(0,12);
+  const results=await Promise.all(selected.map(async f=>{
+   try{
+    const d=await api("predictions",{fixture:f.fixture.id});
+    const p=d.response?.[0];
+    const percent=p?.predictions?.percent||{};
+    const values=[percent.home,percent.draw,percent.away]
+      .map(v=>parseFloat(String(v||"").replace("%","")))
+      .filter(v=>!isNaN(v));
+    return {f,p,score:values.length?Math.max(...values):0};
+   }catch(e){return {f,p:null,score:0};}
+  }));
+  results.sort((a,b)=>b.score-a.score);
+  const top=results.slice(0,5);
+  out.innerHTML=top.map((x,i)=>`
+   <div class="result">
+    <div class="tag">PILIHAN ${i+1}</div>
+    <b>${x.f.teams.home.name} vs ${x.f.teams.away.name}</b><br>
+    <span class="muted">${x.f.league.name}</span><br>
+    <b>Waktu:</b> ${new Date(x.f.fixture.date).toLocaleString("id-ID")}<br>
+    ${x.p?predictionText(x.p):"Prediksi belum tersedia."}
+    <b>Skor indikator:</b> ${x.score?x.score+"%":"Belum tersedia"}
+   </div>
+  `).join("");
+ }catch(e){
+  out.innerHTML='<span style="color:#ff9999">Gagal: '+e.message+'</span>';
+ }finally{btn.disabled=false;}
+}
+
+try{
+ if(window.AndroidBridge&&AndroidBridge.hasApiKey()){
+  document.getElementById("keyStatus").innerHTML=
+  '<span class="green">✓ API Key sudah tersimpan.</span>';
+ }
+}catch(e){}
+</script>
+</body>
+</html>
